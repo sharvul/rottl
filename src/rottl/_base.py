@@ -1,6 +1,6 @@
-import time
-import collections
 import abc
+import collections
+import time
 import typing
 
 
@@ -52,6 +52,10 @@ class _RotatingTTLBase(abc.ABC):
         """
         if num_buckets < 2:
             raise ValueError("num_buckets must be at least 2 for rotation logic.")
+        if ttl <= 0.0:
+            raise ValueError("ttl must be strictly positive.")
+        if bucket_capacity < 1:
+            raise ValueError("bucket_capacity must be at least 1.")
 
         self._ttl = ttl
         self._num_buckets = num_buckets
@@ -61,31 +65,31 @@ class _RotatingTTLBase(abc.ABC):
         self._buckets: typing.Deque[_Bucket] = collections.deque(maxlen=num_buckets)
         self._last_rotation = 0.0
 
+        # Invariant: _buckets is never empty after initialization
+        self._rotate(time.monotonic())
+
     def add(self, item: typing.Any) -> None:
         """Adds an item to the active bucket, rotating first if necessary.
 
         Args:
             item: The element to add to the structure.
         """
-        self._maybe_rotate(time.monotonic())
+        self._maybe_rotate_by_time(time.monotonic())
         self._buckets[0].impl.add(item)
 
-    def _maybe_rotate(self, now: float) -> bool:
-        """Refreshes buckets based on age and capacity.
-
-        Appends a fresh bucket if the active one has expired, and prunes
-        all buckets that have outlived the total TTL.
+    def _maybe_rotate_by_time(self, now: float) -> bool:
+        """Rotates buckets if the active bucket time slot has expired.
 
         Returns:
-            bool: True if buckets were added or evicted.
+            bool: True if rotation occurred.
         """
-        if not self._buckets or now - self._last_rotation >= self._bucket_ttl:
+        if now - self._last_rotation >= self._bucket_ttl:
             self._rotate(now)
             return True
 
         return False
 
-    def _rotate(self, now: float):
+    def _rotate(self, now: float) -> None:
         """Initializes and prepends a new bucket to the sequence."""
         self._last_rotation = now
         self._buckets.appendleft(self._make_bucket(now))
@@ -100,8 +104,7 @@ class _RotatingTTLBase(abc.ABC):
         ...
 
     def __contains__(self, item: typing.Any) -> bool:
-        """Checks membership across all valid buckets (after pruning
-        expired buckets).
+        """Checks membership across all valid buckets.
 
         Args:
             item: The element to search for.
@@ -110,12 +113,11 @@ class _RotatingTTLBase(abc.ABC):
             True if the item exists in any non-expired bucket.
         """
         now = time.monotonic()
-        self._maybe_rotate(now)
-
-        while self._buckets and now - self._buckets[-1].created_at > self._ttl:
-            self._buckets.pop()
 
         for bucket in self._buckets:
+            if now - bucket.created_at > self._ttl:
+                break
+
             if item in bucket.impl:
                 return True
 

@@ -1,5 +1,6 @@
 import rbloom
 import time
+import typing
 
 from ._base import _RotatingTTLBase
 
@@ -8,9 +9,9 @@ class RotatingTTLSet(_RotatingTTLBase):
     """A rotating set with time-based eviction and automatic capacity rotation."""
 
     __slots__ = (
-        "_use_history_proxy_bloom",
-        "_history_proxy_bloom_fpr",
-        "_history_proxy_bloom",
+        "_enable_history_fast_reject",
+        "_history_rejection_filter_fpr",
+        "_history_rejection_filter",
     )
 
     def __init__(
@@ -18,70 +19,83 @@ class RotatingTTLSet(_RotatingTTLBase):
         ttl: float,
         num_buckets: int,
         bucket_capacity: int,
-        use_history_proxy_bloom: bool = False,
-        history_proxy_bloom_fpr: float = 0.001,
+        enable_history_fast_reject: bool = False,
+        history_rejection_filter_fpr: float = 0.001,
     ):
         """Initializes the rotating TTL set.
 
+        Manages a deque of buckets to provide time-based eviction. Items live for
+        an approximate duration between `ttl - (ttl / num_buckets)` and `ttl`.
+        When a bucket's TTL or capacity is reached, a new bucket is prepended and 
+        the oldest is evicted.
+
         Args:
-            ttl: Time-to-live for items in seconds.
+            ttl: Total time-to-live for data in seconds.
             num_buckets: Number of internal rotation stages.
-            bucket_capacity: Optional max items per bucket before auto-rotation.
-            use_history_proxy_bloom: If True, uses a proxy Bloom filter to
-                speed up misses.
-            history_proxy_bloom_fpr: The false positive rate for the history
-                proxy Bloom filter.
+            bucket_capacity: Max items per bucket before auto-rotation.
+            enable_history_fast_reject: If True, maintains an aggregate Bloom filter
+                of all items in non-active buckets. This allows __contains__ to reject
+                misses faster (when num_buckets isn't very small), at the cost of
+                bucket rotation becoming an O(N) operation instead of O(1), and
+                additional memory overhead.
+            history_rejection_filter_fpr: The false positive rate for the history
+                rejection Bloom filter.
         """
+        self._enable_history_fast_reject = enable_history_fast_reject
+        self._history_rejection_filter_fpr = history_rejection_filter_fpr
+        self._history_rejection_filter = None
+
         super().__init__(ttl, num_buckets, bucket_capacity)
 
-        self._use_history_proxy_bloom = use_history_proxy_bloom
-        self._history_proxy_bloom_fpr = history_proxy_bloom_fpr
-        self._history_proxy_bloom = None
+    def add(self, item) -> None:
+        """Adds an item to the active bucket, rotating first if necessary.
 
-    def add(self, item):
+        If history fast reject is enabled and a rotation occurred - rebuilds the
+        history rejection filter.
+
+        Args:
+            item: The element to add to the structure.
+        """
         now = time.monotonic()
+        rotated = self._maybe_rotate_by_time(now)
 
-        if not self._maybe_rotate(now):
-            if len(self._buckets[0].impl) >= self._bucket_capacity:
-                self._rotate(now)
+        if not rotated and len(self._buckets[0].impl) >= self._bucket_capacity:
+            self._rotate(now)
+            rotated = True
+
+        if rotated and self._enable_history_fast_reject:
+            self._rebuild_history_rejection_filter(now)
 
         self._buckets[0].impl.add(item)
 
-    def _rotate(self, now):
-        super()._rotate(now)
-
-        if self._use_history_proxy_bloom:
-            self._update_history_proxy_bloom(now)
-
     def _make_bucket_impl(self) -> set:
+        """Returns a native Python set for the new bucket."""
         return set()
 
-    def _make_history_proxy_bloom(self) -> rbloom.Bloom:
-        return rbloom.Bloom(
-            expected_items=(self._num_buckets - 1) * self._bucket_capacity,
-            false_positive_rate=self._history_proxy_bloom_fpr,
-        )
-
-    def _update_history_proxy_bloom(self, now: float):
+    def _rebuild_history_rejection_filter(self, now: float) -> None:
+        """Builds a new history rejection Bloom filter to replace the current one."""
         buckets_iter = iter(self._buckets)
 
         # Skip active bucket, iter on history buckets
         next(buckets_iter)
 
-        self._history_proxy_bloom = self._make_history_proxy_bloom()
+        self._history_rejection_filter = rbloom.Bloom(
+            expected_items=(self._num_buckets - 1) * self._bucket_capacity,
+            false_positive_rate=self._history_rejection_filter_fpr,
+        )
 
         for bucket in buckets_iter:
             if now - bucket.created_at > self._ttl:
                 break
 
-            self._history_proxy_bloom.update(bucket.impl)
+            self._history_rejection_filter.update(bucket.impl)
 
-    def __contains__(self, item) -> bool:
+    def __contains__(self, item: typing.Any) -> bool:
         """Checks membership across all valid buckets.
 
-        If history proxy optimization is enabled, utilizes an aggregated
-        Bloom filter to quickly reject cache misses in historical buckets
-        before iterating.
+        The active bucket is checked first. If history fast reject is enabled, the
+        history rejection filter is used to quickly reject misses before scanning the
+        rest of the queue.
 
         Args:
             item: The element to search for.
@@ -91,18 +105,28 @@ class RotatingTTLSet(_RotatingTTLBase):
         """
         now = time.monotonic()
 
-        if not self._maybe_rotate(now) and item in self._buckets[0].impl:
+        # All buckets are expired
+        if now - self._buckets[0].created_at > self._ttl:
+            return False
+
+        # Check if item is in active bucket
+        if item in self._buckets[0].impl:
             return True
 
-        if self._use_history_proxy_bloom and self._history_proxy_bloom:
-            if item not in self._history_proxy_bloom:
+        # Use fast history reject if enabled
+        if self._enable_history_fast_reject and self._history_rejection_filter:
+            if item not in self._history_rejection_filter:
                 return False
 
-        while self._buckets and now - self._buckets[-1].created_at > self._ttl:
-            self._buckets.pop()
+        # Check if item is in any of the non-expired history buckets
+        buckets_iter = iter(self._buckets)
+        next(buckets_iter)  # Skip active bucket, already checked
 
-        for idx in range(1, len(self._buckets)):
-            if item in self._buckets[idx].impl:
+        for bucket in buckets_iter:
+            if now - bucket.created_at > self._ttl:
+                break
+
+            if item in bucket.impl:
                 return True
 
         return False
