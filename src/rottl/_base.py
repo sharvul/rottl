@@ -19,9 +19,9 @@ class _Bucket(typing.NamedTuple):
 class _RotatingTTLBase(abc.ABC):
     """Internal abstract base class for rotating TTL structures.
 
-    Manages a deque of buckets to provide approximate time-based eviction. 
-    Items are retained for a maximum of `ttl` seconds. Under normal volume, 
-    items live for at least `ttl - (ttl / num_buckets)` seconds, but may be 
+    Manages a deque of buckets to provide approximate time-based eviction.
+    Items are retained for a maximum of `ttl` seconds. Under normal volume,
+    items live for at least `ttl - (ttl / num_buckets)` seconds, but may be
     evicted earlier if high insertion volume forces capacity-based rotations.
     """
 
@@ -31,7 +31,6 @@ class _RotatingTTLBase(abc.ABC):
         "_bucket_capacity",
         "_bucket_ttl",
         "_buckets",
-        "_last_rotation",
     )
 
     def __init__(
@@ -63,7 +62,6 @@ class _RotatingTTLBase(abc.ABC):
         self._bucket_ttl = ttl / num_buckets
 
         self._buckets: typing.Deque[_Bucket] = collections.deque(maxlen=num_buckets)
-        self._last_rotation = 0.0
 
         # Invariant: _buckets is never empty after initialization
         self._rotate(time.monotonic())
@@ -81,29 +79,20 @@ class _RotatingTTLBase(abc.ABC):
         return self._bucket_capacity
 
     def add(self, item: typing.Any) -> None:
-        """Adds an item to the active bucket, rotating first if necessary.
+        """Adds an item to the active bucket, rotating by time if necessary.
 
         Args:
             item: The element to add to the structure.
         """
-        self._maybe_rotate_by_time(time.monotonic())
-        self._buckets[0].impl.add(item)
+        now = time.monotonic()
 
-    def _maybe_rotate_by_time(self, now: float) -> bool:
-        """Rotates buckets if the active bucket time slot has expired.
-
-        Returns:
-            bool: True if rotation occurred.
-        """
-        if now - self._last_rotation >= self._bucket_ttl:
+        if now - self._buckets[0].created_at >= self._bucket_ttl:
             self._rotate(now)
-            return True
 
-        return False
+        self._buckets[0].impl.add(item)
 
     def _rotate(self, now: float) -> None:
         """Initializes and prepends a new bucket to the sequence."""
-        self._last_rotation = now
         self._buckets.appendleft(self._make_bucket(now))
 
     def _make_bucket(self, now: float) -> _Bucket:

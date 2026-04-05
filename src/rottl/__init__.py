@@ -1,7 +1,7 @@
 """
 rottl: A library for rotating data structures with approximate TTL expiry.
 
-Provides memory-efficient sets and Bloom filters that automatically evict 
+Provides memory-efficient sets and Bloom filters that automatically evict
 old data based on time-to-live (TTL) stages.
 """
 

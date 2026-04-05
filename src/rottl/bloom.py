@@ -7,9 +7,9 @@ from ._base import _RotatingTTLBase
 class RotatingTTLBloom(_RotatingTTLBase):
     """A rotating Bloom filter with approximate time-based eviction.
 
-    Manages a deque of buckets to provide approximate time-based eviction. 
-    Items are retained for a maximum of `ttl` seconds. Under normal volume, 
-    items live for at least `ttl - (ttl / num_buckets)` seconds, but may be 
+    Manages a deque of buckets to provide approximate time-based eviction.
+    Items are retained for a maximum of `ttl` seconds. Under normal volume,
+    items live for at least `ttl - (ttl / num_buckets)` seconds, but may be
     evicted earlier if high insertion volume forces capacity-based rotations.
 
     Capacity enforcement is managed manually via `maybe_rotate_by_saturation`
@@ -30,7 +30,7 @@ class RotatingTTLBloom(_RotatingTTLBase):
         Args:
             ttl: Total time-to-live for data in seconds.
             num_buckets: Number of buckets to divide the TTL into. Must be at least 2.
-            bucket_capacity: Max unique items per bucket to maintain the target false 
+            bucket_capacity: Max unique items per bucket to maintain the target false
                 positive rate.
             bucket_fpr: Target false positive rate per bucket.
         """

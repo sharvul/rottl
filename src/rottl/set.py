@@ -7,11 +7,11 @@ from ._base import _RotatingTTLBase
 
 class RotatingTTLSet(_RotatingTTLBase):
     """A rotating set with approximate time-based eviction.
-    
-    Manages a deque of buckets to provide approximate time-based eviction. 
-    Items are retained for a maximum of `ttl` seconds. Under normal volume, 
-    items live for at least `ttl - (ttl / num_buckets)` seconds, but may be 
-    evicted earlier if high insertion volume forces automatic capacity-based 
+
+    Manages a deque of buckets to provide approximate time-based eviction.
+    Items are retained for a maximum of `ttl` seconds. Under normal volume,
+    items live for at least `ttl - (ttl / num_buckets)` seconds, but may be
+    evicted earlier if high insertion volume forces automatic capacity-based
     rotations.
     """
 
@@ -61,25 +61,30 @@ class RotatingTTLSet(_RotatingTTLBase):
         return self._history_rejection_filter_fpr
 
     def add(self, item) -> None:
-        """Adds an item to the active bucket, rotating first if necessary.
-
-        If history fast reject is enabled and a rotation occurred - rebuilds the
-        history rejection filter.
+        """Adds an item to the active bucket, rotating by time or capacity if necessary.
 
         Args:
             item: The element to add to the structure.
         """
         now = time.monotonic()
-        rotated = self._maybe_rotate_by_time(now)
 
-        if not rotated and len(self._buckets[0].impl) >= self._bucket_capacity:
+        if (
+            now - self._buckets[0].created_at >= self._bucket_ttl
+            or len(self._buckets[0].impl) >= self._bucket_capacity
+        ):
             self._rotate(now)
-            rotated = True
-
-        if rotated and self._enable_history_fast_reject:
-            self._rebuild_history_rejection_filter(now)
 
         self._buckets[0].impl.add(item)
+
+    def _rotate(self, now: float) -> None:
+        """Initializes and prepends a new bucket to the sequence.
+
+        If history fast reject is enabled - rebuilds the history rejection filter.
+        """
+        super()._rotate(now)
+
+        if self._enable_history_fast_reject:
+            self._rebuild_history_rejection_filter(now)
 
     def _make_bucket_impl(self) -> set:
         """Returns a native Python set for the new bucket."""
@@ -127,7 +132,10 @@ class RotatingTTLSet(_RotatingTTLBase):
             return True
 
         # Use fast history reject if enabled
-        if self._enable_history_fast_reject and self._history_rejection_filter:
+        if (
+            self._enable_history_fast_reject
+            and self._history_rejection_filter is not None
+        ):
             if item not in self._history_rejection_filter:
                 return False
 
