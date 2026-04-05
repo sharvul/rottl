@@ -7,15 +7,15 @@ from ._base import _RotatingTTLBase
 class RotatingTTLBloom(_RotatingTTLBase):
     """A rotating Bloom filter with approximate time-based eviction.
 
-    Manages a deque of buckets to provide time-based eviction. Items live for
-    an approximate duration between `ttl - (ttl / num_buckets)` and `ttl`.
-    When a bucket's TTL is reached, a new bucket is prepended and the
-    oldest is evicted.
+    Manages a deque of buckets to provide approximate time-based eviction. 
+    Items are retained for a maximum of `ttl` seconds. Under normal volume, 
+    items live for at least `ttl - (ttl / num_buckets)` seconds, but may be 
+    evicted earlier if high insertion volume forces capacity-based rotations.
 
     Capacity enforcement is managed manually via `maybe_rotate_by_saturation`
     to maintain high performance during additions.
     """
-
+    
     __slots__ = ("_bucket_fpr",)
 
     def __init__(
@@ -34,8 +34,10 @@ class RotatingTTLBloom(_RotatingTTLBase):
                 positive rate.
             bucket_fpr: Target false positive rate per bucket.
         """
-        self._bucket_fpr = bucket_fpr
+        if not 0.0 < bucket_fpr < 1.0:
+            raise ValueError("bucket_fpr must be between 0 and 1.")
 
+        self._bucket_fpr = bucket_fpr
         super().__init__(ttl, num_buckets, bucket_capacity)
 
     def maybe_rotate_by_saturation(self) -> bool:

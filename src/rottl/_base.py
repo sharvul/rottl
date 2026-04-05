@@ -19,12 +19,12 @@ class _Bucket(typing.NamedTuple):
 class _RotatingTTLBase(abc.ABC):
     """Internal abstract base class for rotating TTL structures.
 
-    Manages a deque of buckets to provide time-based eviction. Items live for
-    an approximate duration between `ttl - (ttl / num_buckets)` and `ttl`.
-    When a bucket's TTL is reached, a new bucket is prepended and the
-    oldest is evicted.
+    Manages a deque of buckets to provide approximate time-based eviction. 
+    Items are retained for a maximum of `ttl` seconds. Under normal volume, 
+    items live for at least `ttl - (ttl / num_buckets)` seconds, but may be 
+    evicted earlier if high insertion volume forces capacity-based rotations.
     """
-
+    
     __slots__ = (
         "_ttl",
         "_num_buckets",

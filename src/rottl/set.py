@@ -6,8 +6,15 @@ from ._base import _RotatingTTLBase
 
 
 class RotatingTTLSet(_RotatingTTLBase):
-    """A rotating set with time-based eviction and automatic capacity rotation."""
-
+    """A rotating set with approximate time-based eviction.
+    
+    Manages a deque of buckets to provide approximate time-based eviction. 
+    Items are retained for a maximum of `ttl` seconds. Under normal volume, 
+    items live for at least `ttl - (ttl / num_buckets)` seconds, but may be 
+    evicted earlier if high insertion volume forces automatic capacity-based 
+    rotations.
+    """
+    
     __slots__ = (
         "_enable_history_fast_reject",
         "_history_rejection_filter_fpr",
@@ -24,11 +31,6 @@ class RotatingTTLSet(_RotatingTTLBase):
     ):
         """Initializes the rotating TTL set.
 
-        Manages a deque of buckets to provide time-based eviction. Items live for
-        an approximate duration between `ttl - (ttl / num_buckets)` and `ttl`.
-        When a bucket's TTL or capacity is reached, a new bucket is prepended and 
-        the oldest is evicted.
-
         Args:
             ttl: Total time-to-live for data in seconds.
             num_buckets: Number of internal rotation stages.
@@ -41,6 +43,9 @@ class RotatingTTLSet(_RotatingTTLBase):
             history_rejection_filter_fpr: The false positive rate for the history
                 rejection Bloom filter.
         """
+        if not 0.0 < history_rejection_filter_fpr < 1.0:
+            raise ValueError("history_rejection_filter_fpr must be between 0 and 1.")
+
         self._enable_history_fast_reject = enable_history_fast_reject
         self._history_rejection_filter_fpr = history_rejection_filter_fpr
         self._history_rejection_filter = None
