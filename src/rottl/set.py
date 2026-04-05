@@ -14,7 +14,7 @@ class RotatingTTLSet(_RotatingTTLBase):
     evicted earlier if high insertion volume forces automatic capacity-based 
     rotations.
     """
-    
+
     __slots__ = (
         "_enable_history_fast_reject",
         "_history_rejection_filter_fpr",
@@ -51,6 +51,14 @@ class RotatingTTLSet(_RotatingTTLBase):
         self._history_rejection_filter = None
 
         super().__init__(ttl, num_buckets, bucket_capacity)
+
+    @property
+    def enable_history_fast_reject(self):
+        return self._enable_history_fast_reject
+
+    @property
+    def history_rejection_filter_fpr(self):
+        return self._history_rejection_filter_fpr
 
     def add(self, item) -> None:
         """Adds an item to the active bucket, rotating first if necessary.

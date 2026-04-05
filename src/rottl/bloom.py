@@ -15,7 +15,7 @@ class RotatingTTLBloom(_RotatingTTLBase):
     Capacity enforcement is managed manually via `maybe_rotate_by_saturation`
     to maintain high performance during additions.
     """
-    
+
     __slots__ = ("_bucket_fpr",)
 
     def __init__(
@@ -39,6 +39,10 @@ class RotatingTTLBloom(_RotatingTTLBase):
 
         self._bucket_fpr = bucket_fpr
         super().__init__(ttl, num_buckets, bucket_capacity)
+
+    @property
+    def bucket_fpr(self):
+        return self._bucket_fpr
 
     def maybe_rotate_by_saturation(self) -> bool:
         """Checks bucket saturation and rotates if capacity is exceeded.

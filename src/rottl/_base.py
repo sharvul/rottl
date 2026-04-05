@@ -24,7 +24,7 @@ class _RotatingTTLBase(abc.ABC):
     items live for at least `ttl - (ttl / num_buckets)` seconds, but may be 
     evicted earlier if high insertion volume forces capacity-based rotations.
     """
-    
+
     __slots__ = (
         "_ttl",
         "_num_buckets",
@@ -67,6 +67,18 @@ class _RotatingTTLBase(abc.ABC):
 
         # Invariant: _buckets is never empty after initialization
         self._rotate(time.monotonic())
+
+    @property
+    def ttl(self):
+        return self._ttl
+
+    @property
+    def num_buckets(self):
+        return self._num_buckets
+
+    @property
+    def bucket_capacity(self):
+        return self._bucket_capacity
 
     def add(self, item: typing.Any) -> None:
         """Adds an item to the active bucket, rotating first if necessary.
