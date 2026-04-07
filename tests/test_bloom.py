@@ -53,6 +53,19 @@ class TestRotatingTTLBloom:
         # Filter isn't saturated, validate rotation didn't occurred
         assert not r_bloom.maybe_rotate_by_saturation()
 
+    def test_clear_removes_all_elemets(self):
+        r_bloom = rottl.RotatingTTLBloom(
+            ttl=60.0,
+            num_buckets=2,
+            bucket_capacity=10,
+            bucket_fpr=0.001,
+        )
+
+        r_bloom.add(0)
+        r_bloom.clear()
+
+        assert 0 not in r_bloom
+
     def test_repr(self):
         r_bloom = rottl.RotatingTTLBloom(
             ttl=60.0,

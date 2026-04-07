@@ -85,6 +85,13 @@ class _RotatingTTLBase(abc.ABC):
     def bucket_capacity(self):
         return self._bucket_capacity
 
+    def clear(self):
+        """Remove all elements."""
+        self._buckets.clear()
+
+        # Push a new bucket to keep _buckets non-empty
+        self._rotate(time.monotonic())
+
     def _rotate(self, now: float) -> None:
         """Initializes and prepends a new bucket to the sequence."""
         self._buckets.appendleft(self._make_bucket(now))

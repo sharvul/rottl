@@ -68,6 +68,19 @@ class TestRotatingTTLDict:
         assert 1 in r_dict
         assert 2 in r_dict
 
+    def test_clear_removes_all_elemets(self, enable_history_fast_reject):
+        r_dict = rottl.RotatingTTLDict(
+            ttl=60.0,
+            num_buckets=2,
+            bucket_capacity=10,
+            enable_history_fast_reject=enable_history_fast_reject,
+        )
+
+        r_dict[0] = True
+        r_dict.clear()
+
+        assert 0 not in r_dict
+
     def test_repr(self, enable_history_fast_reject):
         r_dict = rottl.RotatingTTLDict(
             ttl=60.0,

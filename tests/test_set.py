@@ -56,6 +56,19 @@ class TestRotatingTTLSet:
         assert 1 in r_set
         assert 2 in r_set
 
+    def test_clear_removes_all_elemets(self, enable_history_fast_reject):
+        r_set = rottl.RotatingTTLSet(
+            ttl=60.0,
+            num_buckets=2,
+            bucket_capacity=10,
+            enable_history_fast_reject=enable_history_fast_reject,
+        )
+
+        r_set.add(0)
+        r_set.clear()
+
+        assert 0 not in r_set
+
     def test_repr(self, enable_history_fast_reject):
         r_set = rottl.RotatingTTLSet(
             ttl=60.0,
