@@ -1,6 +1,8 @@
 import rbloom
 import time
+import typing
 
+from ._base import _Bucket
 from ._base import _RotatingTTLBase
 
 
@@ -18,6 +20,8 @@ class RotatingTTLBloom(_RotatingTTLBase):
 
     __slots__ = ("_bucket_fpr",)
 
+    _buckets: typing.Deque[_Bucket[rbloom.Bloom]]
+
     def __init__(
         self,
         ttl: float,
@@ -29,7 +33,7 @@ class RotatingTTLBloom(_RotatingTTLBase):
 
         Args:
             ttl: Total time-to-live for data in seconds.
-            num_buckets: Number of buckets to divide the TTL into. Must be at least 2.
+            num_buckets: The number of rotation stages used to divide the total TTL.
             bucket_capacity: Max unique items per bucket to maintain the target false
                 positive rate.
             bucket_fpr: Target false positive rate per bucket.
@@ -43,6 +47,19 @@ class RotatingTTLBloom(_RotatingTTLBase):
     @property
     def bucket_fpr(self):
         return self._bucket_fpr
+
+    def add(self, item: typing.Any) -> None:
+        """Adds an item to the active bucket, rotating by time if necessary.
+
+        Args:
+            item: The element to add to the structure.
+        """
+        now = time.monotonic()
+
+        if now - self._buckets[0].created_at >= self._bucket_ttl:
+            self._rotate(now)
+
+        self._buckets[0].impl.add(item)
 
     def maybe_rotate_by_saturation(self) -> bool:
         """Checks bucket saturation and rotates if capacity is exceeded.

@@ -2,9 +2,12 @@ import abc
 import collections
 import time
 import typing
+import rbloom
+
+T = typing.TypeVar("T")
 
 
-class _Bucket(typing.NamedTuple):
+class _Bucket(typing.Generic[T]):
     """Internal container for a data structure and its creation timestamp.
 
     Attributes:
@@ -12,8 +15,14 @@ class _Bucket(typing.NamedTuple):
         created_at: Monotonic timestamp of when this bucket was initialized.
     """
 
-    impl: typing.Any
-    created_at: float
+    __slots__ = (
+        "impl",
+        "created_at",
+    )
+
+    def __init__(self, impl: T, created_at: float) -> None:
+        self.impl = impl
+        self.created_at = created_at
 
 
 class _RotatingTTLBase(abc.ABC):
@@ -39,16 +48,14 @@ class _RotatingTTLBase(abc.ABC):
         num_buckets: int,
         bucket_capacity: int,
     ):
-        """Initializes the base rotating structure.
+        """Initializes the rotating TTL structure.
 
         Args:
             ttl: Total time-to-live for data in seconds.
-            num_buckets: Number of buckets to divide the TTL into. Must be at least 2.
-            bucket_capacity: Maximum capacity per bucket.
-
-        Raises:
-            ValueError: If num_buckets is less than 2.
+            num_buckets: The number of rotation stages used to divide the total TTL.
+            bucket_capacity: Max expected items per bucket.
         """
+
         if num_buckets < 2:
             raise ValueError("num_buckets must be at least 2 for rotation logic.")
         if ttl <= 0.0:
@@ -77,19 +84,6 @@ class _RotatingTTLBase(abc.ABC):
     @property
     def bucket_capacity(self):
         return self._bucket_capacity
-
-    def add(self, item: typing.Any) -> None:
-        """Adds an item to the active bucket, rotating by time if necessary.
-
-        Args:
-            item: The element to add to the structure.
-        """
-        now = time.monotonic()
-
-        if now - self._buckets[0].created_at >= self._bucket_ttl:
-            self._rotate(now)
-
-        self._buckets[0].impl.add(item)
 
     def _rotate(self, now: float) -> None:
         """Initializes and prepends a new bucket to the sequence."""
@@ -123,3 +117,125 @@ class _RotatingTTLBase(abc.ABC):
                 return True
 
         return False
+
+
+class _RotatingTTLFastRejectBase(_RotatingTTLBase):
+    """Intermediate base class for structures supporting fast-reject history filters.
+
+    Provides joint logic for structures that store exact items (like sets and dicts)
+    and can optionally maintain an aggregate Bloom filter of historical buckets to
+    speed up `__contains__` misses.
+    """
+
+    __slots__ = (
+        "_enable_history_fast_reject",
+        "_history_rejection_filter_fpr",
+        "_history_rejection_filter",
+    )
+
+    def __init__(
+        self,
+        ttl: float,
+        num_buckets: int,
+        bucket_capacity: int,
+        enable_history_fast_reject: bool = False,
+        history_rejection_filter_fpr: float = 0.001,
+    ):
+        """Initializes the rotating TTL structure.
+
+        Args:
+            ttl: Total time-to-live for data in seconds.
+            num_buckets: The number of rotation stages used to divide the total TTL.
+            bucket_capacity: Max items per bucket before auto-rotation.
+            enable_history_fast_reject: If True, maintains an aggregate Bloom filter
+                of all items in non-active buckets. This allows __contains__ to reject
+                misses faster (when num_buckets isn't very small), at the cost of
+                bucket rotation becoming an O(N) operation instead of O(1), and
+                additional memory overhead.
+            history_rejection_filter_fpr: The false positive rate for the history
+                rejection Bloom filter.
+        """
+
+        if not 0.0 < history_rejection_filter_fpr < 1.0:
+            raise ValueError("history_rejection_filter_fpr must be between 0 and 1.")
+
+        self._enable_history_fast_reject = enable_history_fast_reject
+        self._history_rejection_filter_fpr = history_rejection_filter_fpr
+        self._history_rejection_filter = None
+
+        super().__init__(ttl, num_buckets, bucket_capacity)
+
+    @property
+    def enable_history_fast_reject(self):
+        return self._enable_history_fast_reject
+
+    @property
+    def history_rejection_filter_fpr(self):
+        return self._history_rejection_filter_fpr
+
+    def _rotate(self, now: float) -> None:
+        """Initializes and prepends a new bucket to the sequence.
+
+        If history fast reject is enabled - rebuilds the history rejection filter.
+        """
+        super()._rotate(now)
+
+        if self._enable_history_fast_reject:
+            self._rebuild_history_rejection_filter(now)
+
+    def _find_bucket_index(self, item: typing.Any) -> typing.Optional[int]:
+        """
+        Locates the index of the latest (most recent) bucket containing the item.
+
+        Scanning starts from the active bucket (index 0) and proceeds through
+        the history. If fast-reject is enabled, the history is skipped entirely
+        on a Bloom filter miss.
+
+        Returns:
+            The index [0 to num_buckets-1] of the bucket, or None if not found.
+        """
+        now = time.monotonic()
+
+        # Check if all buckets are expired
+        if now - self._buckets[0].created_at > self._ttl:
+            return None
+
+        # Check if item is in active bucket
+        if item in self._buckets[0].impl:
+            return 0
+
+        # Use history fast reject if enabled
+        if (
+            self._enable_history_fast_reject
+            and self._history_rejection_filter is not None
+        ):
+            if item not in self._history_rejection_filter:
+                return None
+
+        # Check if item is in any of the non-expired history buckets
+        for idx in range(1, len(self._buckets)):
+            if now - self._buckets[idx].created_at > self._ttl:
+                break
+
+            if item in self._buckets[idx].impl:
+                return idx
+
+        return None
+
+    def _rebuild_history_rejection_filter(self, now: float) -> None:
+        """Builds a new history rejection Bloom filter to replace the current one."""
+        self._history_rejection_filter = rbloom.Bloom(
+            expected_items=(self._num_buckets - 1) * self._bucket_capacity,
+            false_positive_rate=self._history_rejection_filter_fpr,
+        )
+
+        for idx in range(1, len(self._buckets)):
+            if now - self._buckets[idx].created_at > self._ttl:
+                break
+
+            # This works for both sets (iterates items) and dicts (iterates keys)
+            self._history_rejection_filter.update(self._buckets[idx].impl)
+
+    def __contains__(self, item: typing.Any) -> bool:
+        """Checks membership across all valid buckets."""
+        return self._find_bucket_index(item) is not None
