@@ -126,7 +126,7 @@ class _RotatingTTLBase(abc.ABC):
         return False
 
 
-class _RotatingTTLFastRejectBase(_RotatingTTLBase):
+class _RotatingTTLCollectionBase(_RotatingTTLBase):
     """Intermediate base class for structures supporting fast-reject history filters.
 
     Provides joint logic for structures that store exact items (like sets and dicts)

@@ -2,10 +2,10 @@ import time
 import typing
 
 from ._base import _Bucket
-from ._base import _RotatingTTLFastRejectBase
+from ._base import _RotatingTTLCollectionBase
 
 
-class RotatingTTLSet(_RotatingTTLFastRejectBase):
+class RotatingTTLSet(_RotatingTTLCollectionBase):
     """A rotating set with approximate time-based eviction.
 
     Manages a deque of buckets to provide approximate time-based eviction.
