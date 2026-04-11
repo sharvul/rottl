@@ -96,6 +96,35 @@ class TestRotatingTTLDict:
         mock_monotonic.return_value = 120.0
         assert r_dict.approx_len() == 0
 
+    def test_on_rotate_callbacks(self, enable_history_fast_reject):
+        r_dict = rottl.RotatingTTLDict(
+            ttl=60.0,
+            num_buckets=2,
+            bucket_capacity=2,
+            enable_history_fast_reject=enable_history_fast_reject,
+        )
+
+        cb_count = 0
+
+        def _on_rotate_cb():
+            nonlocal cb_count
+            cb_count += 1
+
+        r_dict.add_on_rotate_callback(_on_rotate_cb)
+
+        for i in range(5):
+            r_dict[i] = True
+
+        assert cb_count == 2
+
+        cb_count = 0
+        r_dict.clear_on_rotate_callbacks()
+
+        for i in range(5):
+            r_dict[i] = True
+
+        assert cb_count == 0
+
     def test_clear_removes_all_elements(self, enable_history_fast_reject):
         r_dict = rottl.RotatingTTLDict(
             ttl=60.0,

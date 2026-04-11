@@ -88,6 +88,37 @@ class TestRotatingTTLBloom:
 
         assert 0 not in r_bloom
 
+    def test_on_rotate_callbacks(self):
+        r_bloom = rottl.RotatingTTLBloom(
+            ttl=60.0,
+            num_buckets=4,
+            bucket_capacity=10,
+            bucket_fpr=0.001,
+        )
+
+        cb_called = False
+
+        def _on_rotate_cb():
+            nonlocal cb_called
+            cb_called = True
+
+        r_bloom.add_on_rotate_callback(_on_rotate_cb)
+
+        for i in range(100):
+            r_bloom.add(i)
+
+        r_bloom.maybe_rotate_by_saturation()
+        assert cb_called
+
+        cb_called = False
+        r_bloom.clear_on_rotate_callbacks()
+
+        for i in range(100):
+            r_bloom.add(i)
+
+        r_bloom.maybe_rotate_by_saturation()
+        assert not cb_called
+
     def test_repr(self):
         r_bloom = rottl.RotatingTTLBloom(
             ttl=60.0,

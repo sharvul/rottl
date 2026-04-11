@@ -40,6 +40,7 @@ class _RotatingTTLBase(abc.ABC):
         "_bucket_capacity",
         "_bucket_ttl",
         "_buckets",
+        "_on_rotate_callbacks",
     )
 
     def __init__(
@@ -69,6 +70,7 @@ class _RotatingTTLBase(abc.ABC):
         self._bucket_ttl = ttl / num_buckets
 
         self._buckets: typing.Deque[_Bucket] = collections.deque(maxlen=num_buckets)
+        self._on_rotate_callbacks: typing.List[typing.Callable[[], None]] = []
 
         # Invariant: _buckets is never empty after initialization
         self._rotate(time.monotonic())
@@ -112,9 +114,24 @@ class _RotatingTTLBase(abc.ABC):
         # Push a new bucket to keep _buckets non-empty
         self._rotate(time.monotonic())
 
+    def add_on_rotate_callback(self, callback: typing.Callable[[], None]) -> None:
+        """Registers a callback to be executed whenever a bucket rotation occurs.
+
+        Args:
+            callback: A callable to be invoked during the rotation process.
+        """
+        self._on_rotate_callbacks.append(callback)
+
+    def clear_on_rotate_callbacks(self) -> None:
+        """Removes all registered rotation callbacks."""
+        self._on_rotate_callbacks.clear()
+
     def _rotate(self, now: float) -> None:
         """Initializes and prepends a new bucket to the sequence."""
         self._buckets.appendleft(self._make_bucket(now))
+
+        for callback in self._on_rotate_callbacks:
+            callback()
 
     def _make_bucket(self, now: float) -> _Bucket:
         """Wraps a new subclass implementation into a _Bucket container."""
