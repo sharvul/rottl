@@ -56,7 +56,35 @@ class TestRotatingTTLSet:
         assert 1 in r_set
         assert 2 in r_set
 
-    def test_clear_removes_all_elemets(self, enable_history_fast_reject):
+    @mock.patch("time.monotonic")
+    def test_approx_len(self, mock_monotonic, enable_history_fast_reject):
+        mock_monotonic.return_value = 0.0
+
+        r_set = rottl.RotatingTTLSet(
+            ttl=60.0,
+            num_buckets=2,
+            bucket_capacity=2,
+            enable_history_fast_reject=enable_history_fast_reject,
+        )
+
+        assert r_set.approx_len() == 0
+
+        r_set.add(True)
+        r_set.add(False)
+
+        assert r_set.approx_len() == 2
+
+        r_set.add(True)
+        r_set.add(False)
+
+        # dup items across diff buckets are counted separately
+        assert r_set.approx_len() == 4
+
+        # validate we don't count expired buckets
+        mock_monotonic.return_value = 120.0
+        assert r_set.approx_len() == 0
+
+    def test_clear_removes_all_elements(self, enable_history_fast_reject):
         r_set = rottl.RotatingTTLSet(
             ttl=60.0,
             num_buckets=2,

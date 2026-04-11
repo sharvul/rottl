@@ -87,6 +87,10 @@ class RotatingTTLBloom(_RotatingTTLBase):
             false_positive_rate=self._bucket_fpr,
         )
 
+    def _get_bucket_impl_approx_len(self, bucket_impl: rbloom.Bloom):
+        """Returns the estimated number of items in the Bloom filter bucket."""
+        return bucket_impl.approx_items
+
     def __repr__(self) -> str:
         return (
             f"<RotatingTTLBloom("

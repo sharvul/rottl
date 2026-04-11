@@ -53,7 +53,29 @@ class TestRotatingTTLBloom:
         # Filter isn't saturated, validate rotation didn't occurred
         assert not r_bloom.maybe_rotate_by_saturation()
 
-    def test_clear_removes_all_elemets(self):
+    @mock.patch("time.monotonic")
+    def test_approx_len(self, mock_monotonic):
+        mock_monotonic.return_value = 0.0
+
+        r_bloom = rottl.RotatingTTLBloom(
+            ttl=60.0,
+            num_buckets=4,
+            bucket_capacity=2_000,
+            bucket_fpr=0.001,
+        )
+
+        assert r_bloom.approx_len() == 0
+
+        for i in range(1_000):
+            r_bloom.add(i)
+
+        assert r_bloom.approx_len() > 100
+
+        # validate we don't count expired buckets
+        mock_monotonic.return_value = 120.0
+        assert r_bloom.approx_len() == 0
+
+    def test_clear_removes_all_elements(self):
         r_bloom = rottl.RotatingTTLBloom(
             ttl=60.0,
             num_buckets=2,
