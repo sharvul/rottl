@@ -4,10 +4,21 @@ build-backend = "hatchling.build"
 
 [project]
 name = "rottl"
-version = "0.0.1"
+version = "0.0.2"
 description = "A high-performance Python library providing bucket-based rotating data structures with approximate TTL eviction and strict memory constraints."
 readme = "README.md"
 requires-python = ">=3.9"
+dependencies = [
+    "rbloom==1.5.4",
+]
+keywords = [
+    "ttl",
+    "cache",
+    "bloom",
+    "bloom-filter",
+    "rotating",
+    "data-structures",
+]
 classifiers = [
     "Programming Language :: Python :: 3",
     "Operating System :: OS Independent",
