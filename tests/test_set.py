@@ -122,6 +122,32 @@ class TestRotatingTTLSet:
 
         assert 0 not in r_set
 
+    @mock.patch("time.monotonic")
+    def test_rotation_counters(self, mock_monotonic, enable_history_fast_reject):
+        mock_monotonic.return_value = 0.0
+
+        r_set = rottl.RotatingTTLSet(
+            ttl=60.0,
+            num_buckets=2,
+            bucket_capacity=10,
+            enable_history_fast_reject=enable_history_fast_reject,
+        )
+
+        assert r_set.rotations_by_ttl == 0
+        assert r_set.rotations_by_capacity == 0
+
+        for i in range(15):
+            r_set.add(i)
+
+        assert r_set.rotations_by_ttl == 0
+        assert r_set.rotations_by_capacity == 1
+
+        mock_monotonic.return_value = 80.0
+        r_set.add(20)
+
+        assert r_set.rotations_by_ttl == 1
+        assert r_set.rotations_by_capacity == 1
+
     def test_repr(self, enable_history_fast_reject):
         r_set = rottl.RotatingTTLSet(
             ttl=60.0,

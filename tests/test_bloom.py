@@ -119,6 +119,33 @@ class TestRotatingTTLBloom:
         r_bloom.maybe_rotate_by_saturation()
         assert not cb_called
 
+    @mock.patch("time.monotonic")
+    def test_rotation_counters(self, mock_monotonic):
+        mock_monotonic.return_value = 0.0
+
+        r_bloom = rottl.RotatingTTLBloom(
+            ttl=60.0,
+            num_buckets=2,
+            bucket_capacity=10,
+            bucket_fpr=0.001,
+        )
+
+        assert r_bloom.rotations_by_ttl == 0
+        assert r_bloom.rotations_by_capacity == 0
+
+        for i in range(200):
+            r_bloom.add(i)
+
+        r_bloom.maybe_rotate_by_saturation()
+        assert r_bloom.rotations_by_ttl == 0
+        assert r_bloom.rotations_by_capacity == 1
+
+        mock_monotonic.return_value = 80.0
+        r_bloom.add(1000)
+
+        assert r_bloom.rotations_by_ttl == 1
+        assert r_bloom.rotations_by_capacity == 1
+
     def test_repr(self):
         r_bloom = rottl.RotatingTTLBloom(
             ttl=60.0,

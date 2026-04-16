@@ -2,6 +2,7 @@ import time
 import typing
 
 from ._base import _Bucket
+from ._base import _RotationReason
 from ._base import _RotatingTTLCollectionBase
 
 
@@ -27,11 +28,11 @@ class RotatingTTLSet(_RotatingTTLCollectionBase):
         """
         now = time.monotonic()
 
-        if (
-            now - self._buckets[0].created_at >= self._bucket_ttl
-            or len(self._buckets[0].impl) >= self._bucket_capacity
-        ):
-            self._rotate(now)
+        if now - self._buckets[0].created_at >= self._bucket_ttl:
+            self._rotate(now, _RotationReason.TTL)
+
+        elif len(self._buckets[0].impl) >= self._bucket_capacity:
+            self._rotate(now, _RotationReason.CAPACITY)
 
         self._buckets[0].impl.add(item)
 

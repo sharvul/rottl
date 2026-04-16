@@ -1,5 +1,6 @@
 import abc
 import collections
+import enum
 import time
 import typing
 import rbloom
@@ -25,6 +26,11 @@ class _Bucket(typing.Generic[T]):
         self.created_at = created_at
 
 
+class _RotationReason(enum.Enum):
+    TTL = enum.auto()
+    CAPACITY = enum.auto()
+
+
 class _RotatingTTLBase(abc.ABC):
     """Internal abstract base class for rotating TTL structures.
 
@@ -41,6 +47,8 @@ class _RotatingTTLBase(abc.ABC):
         "_bucket_ttl",
         "_buckets",
         "_on_rotate_callbacks",
+        "_rotations_by_ttl_count",
+        "_rotations_by_capacity_count",
     )
 
     def __init__(
@@ -72,6 +80,9 @@ class _RotatingTTLBase(abc.ABC):
         self._buckets: typing.Deque[_Bucket] = collections.deque(maxlen=num_buckets)
         self._on_rotate_callbacks: typing.List[typing.Callable[[], None]] = []
 
+        self._rotations_by_ttl_count = 0
+        self._rotations_by_capacity_count = 0
+
         # Invariant: _buckets is never empty after initialization
         self._rotate(time.monotonic())
 
@@ -86,6 +97,14 @@ class _RotatingTTLBase(abc.ABC):
     @property
     def bucket_capacity(self):
         return self._bucket_capacity
+
+    @property
+    def rotations_by_ttl(self):
+        return self._rotations_by_ttl_count
+
+    @property
+    def rotations_by_capacity(self):
+        return self._rotations_by_capacity_count
 
     def clear(self):
         """Removes all elements from the structure by purging all buckets."""
@@ -106,9 +125,18 @@ class _RotatingTTLBase(abc.ABC):
         """Removes all registered rotation callbacks."""
         self._on_rotate_callbacks.clear()
 
-    def _rotate(self, now: float) -> None:
+    def _rotate(
+        self,
+        now: float,
+        reason: typing.Optional[_RotationReason] = None,
+    ) -> None:
         """Initializes and prepends a new bucket to the sequence."""
         self._buckets.appendleft(self._make_bucket(now))
+
+        if reason is _RotationReason.TTL:
+            self._rotations_by_ttl_count += 1
+        elif reason is _RotationReason.CAPACITY:
+            self._rotations_by_capacity_count += 1
 
         for callback in self._on_rotate_callbacks:
             callback()
@@ -211,12 +239,16 @@ class _RotatingTTLCollectionBase(_RotatingTTLBase):
 
         return len(self._buckets[0].impl)
 
-    def _rotate(self, now: float) -> None:
+    def _rotate(
+        self,
+        now: float,
+        reason: typing.Optional[_RotationReason] = None,
+    ) -> None:
         """Initializes and prepends a new bucket to the sequence.
 
         If history fast reject is enabled - rebuilds the history rejection filter.
         """
-        super()._rotate(now)
+        super()._rotate(now, reason)
 
         if self._enable_history_fast_reject:
             self._rebuild_history_rejection_filter(now)

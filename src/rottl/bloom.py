@@ -3,6 +3,7 @@ import time
 import typing
 
 from ._base import _Bucket
+from ._base import _RotationReason
 from ._base import _RotatingTTLBase
 
 
@@ -57,7 +58,7 @@ class RotatingTTLBloom(_RotatingTTLBase):
         now = time.monotonic()
 
         if now - self._buckets[0].created_at >= self._bucket_ttl:
-            self._rotate(now)
+            self._rotate(now, _RotationReason.TTL)
 
         self._buckets[0].impl.add(item)
 
@@ -93,7 +94,7 @@ class RotatingTTLBloom(_RotatingTTLBase):
             True if a rotation occurred, False otherwise.
         """
         if self.get_active_bucket_approx_items() >= self._bucket_capacity:
-            self._rotate(time.monotonic())
+            self._rotate(time.monotonic(), _RotationReason.CAPACITY)
             return True
 
         return False
