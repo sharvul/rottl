@@ -63,10 +63,6 @@ class RotatingTTLDict(_RotatingTTLCollectionBase):
         """Returns a native Python dict for the new bucket."""
         return dict()
 
-    def _get_bucket_impl_approx_len(self, bucket_impl: dict):
-        """Returns the exact number of items in the native dict bucket."""
-        return len(bucket_impl)
-
     def __repr__(self) -> str:
         return (
             f"<RotatingTTLDict("

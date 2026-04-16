@@ -61,6 +61,24 @@ class RotatingTTLBloom(_RotatingTTLBase):
 
         self._buckets[0].impl.add(item)
 
+    def get_active_bucket_approx_items(self):
+        """Calculates the approximate number of items in the active bucket.
+
+        If the active bucket has expired based on the total TTL, returns 0 to reflect
+        its effective state.
+
+        Note:
+            Calculating this value requires counting all set bits in the underlying
+            Bloom filter, which is an O(M) operation (where M is the filter size in bits).
+
+        Returns:
+            The approximate number of items currently in the active bucket.
+        """
+        if time.monotonic() - self._buckets[0].created_at > self._ttl:
+            return 0
+
+        return self._buckets[0].impl.approx_items
+
     def maybe_rotate_by_saturation(self) -> bool:
         """Checks bucket saturation and rotates if capacity is exceeded.
 
@@ -74,7 +92,7 @@ class RotatingTTLBloom(_RotatingTTLBase):
         Returns:
             True if a rotation occurred, False otherwise.
         """
-        if self._buckets[0].impl.approx_items >= self._bucket_capacity:
+        if self.get_active_bucket_approx_items() >= self._bucket_capacity:
             self._rotate(time.monotonic())
             return True
 
@@ -86,10 +104,6 @@ class RotatingTTLBloom(_RotatingTTLBase):
             expected_items=self._bucket_capacity,
             false_positive_rate=self._bucket_fpr,
         )
-
-    def _get_bucket_impl_approx_len(self, bucket_impl: rbloom.Bloom):
-        """Returns the estimated number of items in the Bloom filter bucket."""
-        return bucket_impl.approx_items
 
     def __repr__(self) -> str:
         return (

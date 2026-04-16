@@ -39,10 +39,6 @@ class RotatingTTLSet(_RotatingTTLCollectionBase):
         """Returns a native Python set for the new bucket."""
         return set()
 
-    def _get_bucket_impl_approx_len(self, bucket_impl: set):
-        """Returns the exact number of items in the native set bucket."""
-        return len(bucket_impl)
-
     def __repr__(self) -> str:
         return (
             f"<RotatingTTLSet("

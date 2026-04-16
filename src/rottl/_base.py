@@ -87,26 +87,6 @@ class _RotatingTTLBase(abc.ABC):
     def bucket_capacity(self):
         return self._bucket_capacity
 
-    def approx_len(self):
-        """Calculates the approximate total number of items across all valid buckets.
-
-        Note:
-            Items that exist in multiple non-expired buckets are counted multiple times.
-
-        Returns:
-            The estimated total number of items currently held in the structure.
-        """
-        now = time.monotonic()
-        result = 0
-
-        for bucket in self._buckets:
-            if now - bucket.created_at > self._ttl:
-                break
-
-            result += self._get_bucket_impl_approx_len(bucket.impl)
-
-        return result
-
     def clear(self):
         """Removes all elements from the structure by purging all buckets."""
         self._buckets.clear()
@@ -140,11 +120,6 @@ class _RotatingTTLBase(abc.ABC):
     @abc.abstractmethod
     def _make_bucket_impl(self) -> typing.Any:
         """Returns the raw internal structure for a new bucket."""
-        ...
-
-    @abc.abstractmethod
-    def _get_bucket_impl_approx_len(self) -> int:
-        """Returns the approximate number of items in the underlying structure."""
         ...
 
     def __contains__(self, item: typing.Any) -> bool:
@@ -221,6 +196,20 @@ class _RotatingTTLCollectionBase(_RotatingTTLBase):
     @property
     def history_rejection_filter_fpr(self):
         return self._history_rejection_filter_fpr
+
+    def get_active_bucket_len(self):
+        """Calculates the number of items in the active bucket.
+
+        If the active bucket has expired based on the total TTL, returns 0 to reflect
+        its effective state.
+
+        Returns:
+            The number of items currently in the active bucket.
+        """
+        if time.monotonic() - self._buckets[0].created_at > self._ttl:
+            return 0
+
+        return len(self._buckets[0].impl)
 
     def _rotate(self, now: float) -> None:
         """Initializes and prepends a new bucket to the sequence.

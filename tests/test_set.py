@@ -57,7 +57,7 @@ class TestRotatingTTLSet:
         assert 2 in r_set
 
     @mock.patch("time.monotonic")
-    def test_approx_len(self, mock_monotonic, enable_history_fast_reject):
+    def test_get_active_bucket_len(self, mock_monotonic, enable_history_fast_reject):
         mock_monotonic.return_value = 0.0
 
         r_set = rottl.RotatingTTLSet(
@@ -67,22 +67,18 @@ class TestRotatingTTLSet:
             enable_history_fast_reject=enable_history_fast_reject,
         )
 
-        assert r_set.approx_len() == 0
+        assert r_set.get_active_bucket_len() == 0
 
         r_set.add(True)
         r_set.add(False)
-
-        assert r_set.approx_len() == 2
+        assert r_set.get_active_bucket_len() == 2
 
         r_set.add(True)
-        r_set.add(False)
-
-        # dup items across diff buckets are counted separately
-        assert r_set.approx_len() == 4
+        assert r_set.get_active_bucket_len() == 1
 
         # validate we don't count expired buckets
         mock_monotonic.return_value = 120.0
-        assert r_set.approx_len() == 0
+        assert r_set.get_active_bucket_len() == 0
 
     def test_on_rotate_callbacks(self, enable_history_fast_reject):
         r_set = rottl.RotatingTTLSet(
