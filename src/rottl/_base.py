@@ -162,7 +162,7 @@ class _RotatingTTLBase(abc.ABC):
         now = time.monotonic()
 
         for bucket in self._buckets:
-            if now - bucket.created_at > self._ttl:
+            if now - bucket.created_at >= self._ttl:
                 break
 
             if item in bucket.impl:
@@ -234,7 +234,7 @@ class _RotatingTTLCollectionBase(_RotatingTTLBase):
         Returns:
             The number of items currently in the active bucket.
         """
-        if time.monotonic() - self._buckets[0].created_at > self._ttl:
+        if time.monotonic() - self._buckets[0].created_at >= self._ttl:
             return 0
 
         return len(self._buckets[0].impl)
@@ -267,7 +267,7 @@ class _RotatingTTLCollectionBase(_RotatingTTLBase):
         now = time.monotonic()
 
         # Check if all buckets are expired
-        if now - self._buckets[0].created_at > self._ttl:
+        if now - self._buckets[0].created_at >= self._ttl:
             return None
 
         # Check if item is in active bucket
@@ -284,7 +284,7 @@ class _RotatingTTLCollectionBase(_RotatingTTLBase):
 
         # Check if item is in any of the non-expired history buckets
         for idx in range(1, len(self._buckets)):
-            if now - self._buckets[idx].created_at > self._ttl:
+            if now - self._buckets[idx].created_at >= self._ttl:
                 break
 
             if item in self._buckets[idx].impl:
@@ -300,7 +300,7 @@ class _RotatingTTLCollectionBase(_RotatingTTLBase):
         )
 
         for idx in range(1, len(self._buckets)):
-            if now - self._buckets[idx].created_at > self._ttl:
+            if now - self._buckets[idx].created_at >= self._ttl:
                 break
 
             # This works for both sets (iterates items) and dicts (iterates keys)

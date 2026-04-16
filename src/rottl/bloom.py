@@ -75,7 +75,7 @@ class RotatingTTLBloom(_RotatingTTLBase):
         Returns:
             The approximate number of items currently in the active bucket.
         """
-        if time.monotonic() - self._buckets[0].created_at > self._ttl:
+        if time.monotonic() - self._buckets[0].created_at >= self._ttl:
             return 0
 
         return self._buckets[0].impl.approx_items
