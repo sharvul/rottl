@@ -10,12 +10,12 @@ The library exposes three structures:
 - **`RotatingTTLDict`** — a rotating, TTL-based dict backed by native Python `dict` buckets.
 - **`RotatingTTLBloom`** — a rotating, TTL-based Bloom filter backed by [`rbloom`](https://github.com/KenanHanke/rbloom).
  
-`RotatingTTLSet` and `RotatingTTLDict` support an optional **history fast-reject** mode, which maintains an auxiliary Bloom filter over all non-expired historical buckets. This allows most membership misses to be short-circuited without scanning the full bucket deque, at the cost of filter rebuild on each rotation.
- 
 All three structures rotate automatically on both time and capacity. However, they use different mechanisms to maintain performance:
  
 * **`RotatingTTLSet` and `RotatingTTLDict`**: Capacity is checked inline on every insertion via an $O(1)$ `len()` call.
 * **`RotatingTTLBloom`**: Estimating unique items requires counting all set bits in the filter — an $O(M)$ operation. To keep the hot path $O(1)$ for the vast majority of insertions, capacity is managed via an **amortized countdown** that defers the check.
+ 
+`RotatingTTLSet` and `RotatingTTLDict` support an optional **history fast-reject** mode, which maintains an auxiliary Bloom filter over all non-expired historical buckets. This allows most membership misses to be short-circuited without scanning the full bucket deque, at the cost of filter rebuild on each rotation.
  
 ---
  
