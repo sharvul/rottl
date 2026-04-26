@@ -12,7 +12,10 @@ The library exposes three structures:
  
 `RotatingTTLSet` and `RotatingTTLDict` support an optional **history fast-reject** mode, which maintains an auxiliary Bloom filter over all non-expired historical buckets. This allows most membership misses to be short-circuited without scanning the full bucket deque, at the cost of filter rebuild on each rotation.
  
-`RotatingTTLSet` and `RotatingTTLDict` rotate automatically on both time and capacity. `RotatingTTLBloom` rotates automatically only by time, because estimating the number of items in a Bloom filter requires counting all set bits, which is too expensive to do on every insertion. Instead, `maybe_rotate_by_saturation()` can be called manually to check if the active bucket has exceeded its capacity, and if so — trigger rotation (to enforce the configured FPR).
+All three structures rotate automatically on both time and capacity. However, they use different mechanisms to maintain performance:
+ 
+* **`RotatingTTLSet` and `RotatingTTLDict`**: Capacity is checked inline on every insertion via an $O(1)$ `len()` call.
+* **`RotatingTTLBloom`**: Estimating unique items requires counting all set bits in the filter — an $O(M)$ operation. To keep the hot path $O(1)$ for the vast majority of insertions, capacity is managed via an **amortized countdown** that defers the check.
  
 ---
  

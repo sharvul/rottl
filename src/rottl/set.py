@@ -28,9 +28,11 @@ class RotatingTTLSet(_RotatingTTLCollectionBase):
         """
         now = time.monotonic()
 
+        # 1. Time-based rotation check
         if now - self._buckets[0].created_at >= self._bucket_ttl:
             self._rotate(now, _RotationReason.TTL)
 
+        # 2. Capacity-based rotation check
         elif len(self._buckets[0].impl) >= self._bucket_capacity:
             self._rotate(now, _RotationReason.CAPACITY)
 

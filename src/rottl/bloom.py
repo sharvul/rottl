@@ -13,13 +13,14 @@ class RotatingTTLBloom(_RotatingTTLBase):
     Manages a deque of buckets to provide approximate time-based eviction.
     Items are retained for a maximum of `ttl` seconds. Under normal volume,
     items live for at least `ttl - (ttl / num_buckets)` seconds, but may be
-    evicted earlier if high insertion volume forces capacity-based rotations.
-
-    Capacity enforcement is managed manually via `maybe_rotate_by_saturation`
-    to maintain high performance during additions.
+    evicted earlier if high insertion volume forces automatic capacity-based
+    rotations.
     """
 
-    __slots__ = ("_bucket_fpr",)
+    __slots__ = (
+        "_bucket_fpr",
+        "_inserts_until_saturation_check",
+    )
 
     _buckets: typing.Deque[_Bucket[rbloom.Bloom]]
 
@@ -43,6 +44,8 @@ class RotatingTTLBloom(_RotatingTTLBase):
             raise ValueError("bucket_fpr must be between 0 and 1.")
 
         self._bucket_fpr = bucket_fpr
+        self._inserts_until_saturation_check = bucket_capacity
+
         super().__init__(ttl, num_buckets, bucket_capacity)
 
     @property
@@ -50,17 +53,35 @@ class RotatingTTLBloom(_RotatingTTLBase):
         return self._bucket_fpr
 
     def add(self, item: typing.Any) -> None:
-        """Adds an item to the active bucket, rotating by time if necessary.
+        """Adds an item to the active bucket, rotating by time or capacity if necessary.
 
         Args:
             item: The element to add to the structure.
         """
         now = time.monotonic()
 
+        # 1. Time-based rotation check
         if now - self._buckets[0].created_at >= self._bucket_ttl:
             self._rotate(now, _RotationReason.TTL)
 
+        # 2. Capacity-based rotation check (amortized)
+        elif self._inserts_until_saturation_check <= 0:
+            # O(M) operation: count set bits to estimate unique items
+            approx_items = self._buckets[0].impl.approx_items
+
+            if approx_items >= self._bucket_capacity:
+                self._rotate(now, _RotationReason.CAPACITY)
+            else:
+                # Reset countdown using remaining capacity; use a 1% minimum floor
+                # to prevent O(M) check thrashing near the saturation limit.
+                self._inserts_until_saturation_check = max(
+                    self._bucket_capacity - approx_items,  # remaining capacity
+                    int(self._bucket_capacity * 0.01),  # 1% safety margin
+                    1,  # minimal allowed interval
+                )
+
         self._buckets[0].impl.add(item)
+        self._inserts_until_saturation_check -= 1
 
     def get_active_bucket_approx_items(self):
         """Calculates the approximate number of items in the active bucket.
@@ -80,24 +101,14 @@ class RotatingTTLBloom(_RotatingTTLBase):
 
         return self._buckets[0].impl.approx_items
 
-    def maybe_rotate_by_saturation(self) -> bool:
-        """Checks bucket saturation and rotates if capacity is exceeded.
-
-        Note:
-            Checking saturation requires calculating the approximate items, which
-            counts all set bits in the underlying Bloom filter (O(M) where M is the
-            filter size in bits).
-            While fast, it is not free. Call this periodically rather than on every
-            add to preserve high write performance.
-
-        Returns:
-            True if a rotation occurred, False otherwise.
-        """
-        if self.get_active_bucket_approx_items() >= self._bucket_capacity:
-            self._rotate(time.monotonic(), _RotationReason.CAPACITY)
-            return True
-
-        return False
+    def _rotate(
+        self,
+        now: float,
+        reason: typing.Optional[_RotationReason] = None,
+    ) -> None:
+        """Prepends a new bucket and resets the capacity check countdown."""
+        super()._rotate(now, reason)
+        self._inserts_until_saturation_check = self._bucket_capacity
 
     def _make_bucket_impl(self) -> rbloom.Bloom:
         """Returns an rbloom.Bloom filter for the new bucket."""

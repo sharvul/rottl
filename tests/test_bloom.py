@@ -36,22 +36,20 @@ class TestRotatingTTLBloom:
         assert "item1" not in r_bloom
         assert "item2" in r_bloom
 
-    def test_maybe_rotate_by_saturation(self):
+    def test_capacity_enforcement(self):
         r_bloom = rottl.RotatingTTLBloom(
             ttl=60.0,
-            num_buckets=3,
-            bucket_capacity=2,
-            bucket_fpr=0.01,
+            num_buckets=2,
+            bucket_capacity=1_000,
+            bucket_fpr=0.001,
         )
 
-        for i in range(10):
-            r_bloom.add(i + 0.5)
+        for i in range(3_000):
+            r_bloom.add(i)
 
-        # Filter is saturated, validate rotation occurred
-        assert r_bloom.maybe_rotate_by_saturation()
-
-        # Filter isn't saturated, validate rotation didn't occurred
-        assert not r_bloom.maybe_rotate_by_saturation()
+        assert 0 not in r_bloom
+        assert 2000 in r_bloom
+        assert 2500 in r_bloom
 
     @mock.patch("time.monotonic")
     def test_get_active_bucket_approx_items(self, mock_monotonic):
@@ -92,7 +90,7 @@ class TestRotatingTTLBloom:
         r_bloom = rottl.RotatingTTLBloom(
             ttl=60.0,
             num_buckets=4,
-            bucket_capacity=10,
+            bucket_capacity=1_000,
             bucket_fpr=0.001,
         )
 
@@ -104,19 +102,17 @@ class TestRotatingTTLBloom:
 
         r_bloom.add_on_rotate_callback(_on_rotate_cb)
 
-        for i in range(100):
+        for i in range(2_000):
             r_bloom.add(i)
 
-        r_bloom.maybe_rotate_by_saturation()
         assert cb_called
 
         cb_called = False
         r_bloom.clear_on_rotate_callbacks()
 
-        for i in range(100):
+        for i in range(2_000):
             r_bloom.add(i)
 
-        r_bloom.maybe_rotate_by_saturation()
         assert not cb_called
 
     @mock.patch("time.monotonic")
@@ -126,22 +122,21 @@ class TestRotatingTTLBloom:
         r_bloom = rottl.RotatingTTLBloom(
             ttl=60.0,
             num_buckets=2,
-            bucket_capacity=10,
+            bucket_capacity=1_000,
             bucket_fpr=0.001,
         )
 
         assert r_bloom.rotations_by_ttl == 0
         assert r_bloom.rotations_by_capacity == 0
 
-        for i in range(200):
+        for i in range(1_500):
             r_bloom.add(i)
 
-        r_bloom.maybe_rotate_by_saturation()
         assert r_bloom.rotations_by_ttl == 0
         assert r_bloom.rotations_by_capacity == 1
 
         mock_monotonic.return_value = 80.0
-        r_bloom.add(1000)
+        r_bloom.add(1_500)
 
         assert r_bloom.rotations_by_ttl == 1
         assert r_bloom.rotations_by_capacity == 1
