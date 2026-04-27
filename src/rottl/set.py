@@ -40,7 +40,7 @@ class RotatingTTLSet(_RotatingTTLCollectionBase[set]):
         return set()
 
     @classmethod
-    def _get_bucket_impl_item_count(cls, impl: set):
+    def _get_bucket_impl_item_count(cls, impl: set) -> int:
         """Returns the exact item count of the set bucket impl."""
         return len(impl)
 

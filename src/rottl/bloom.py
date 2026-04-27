@@ -97,7 +97,7 @@ class RotatingTTLBloom(_RotatingTTLBase[rbloom.Bloom]):
         )
 
     @classmethod
-    def _get_bucket_impl_item_count(cls, bucket_impl: rbloom.Bloom):
+    def _get_bucket_impl_item_count(cls, bucket_impl: rbloom.Bloom) -> int:
         """Returns the approximate item count of the bloom bucket impl.
 
         Note:

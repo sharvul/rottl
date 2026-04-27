@@ -64,7 +64,7 @@ class RotatingTTLDict(_RotatingTTLCollectionBase[dict]):
         return dict()
 
     @classmethod
-    def _get_bucket_impl_item_count(cls, impl: dict):
+    def _get_bucket_impl_item_count(cls, impl: dict) -> int:
         """Returns the exact item count of the dict bucket impl."""
         return len(impl)
 
