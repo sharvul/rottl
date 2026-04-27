@@ -31,7 +31,7 @@ class _RotationReason(enum.Enum):
     CAPACITY = enum.auto()
 
 
-class _RotatingTTLBase(abc.ABC):
+class _RotatingTTLBase(abc.ABC, typing.Generic[T]):
     """Internal abstract base class for rotating TTL structures.
 
     Manages a deque of buckets to provide approximate time-based eviction.
@@ -77,7 +77,7 @@ class _RotatingTTLBase(abc.ABC):
         self._bucket_capacity = bucket_capacity
         self._bucket_ttl = ttl / num_buckets
 
-        self._buckets: typing.Deque[_Bucket] = collections.deque(maxlen=num_buckets)
+        self._buckets: typing.Deque[_Bucket[T]] = collections.deque(maxlen=num_buckets)
         self._on_rotate_callbacks: typing.List[typing.Callable[[], None]] = []
 
         self._rotations_by_ttl_count = 0
@@ -125,6 +125,17 @@ class _RotatingTTLBase(abc.ABC):
         """Removes all registered rotation callbacks."""
         self._on_rotate_callbacks.clear()
 
+    def get_active_bucket_item_count(self) -> int:
+        """Calculates the number of items (or approximate items) in the active bucket.
+
+        If the active bucket has expired based on the total TTL, returns 0 to reflect
+        its effective state.
+        """
+        if time.monotonic() - self._buckets[0].created_at >= self._ttl:
+            return 0
+
+        return self._get_bucket_impl_item_count(self._buckets[0].impl)
+
     def _rotate(
         self,
         now: float,
@@ -141,13 +152,23 @@ class _RotatingTTLBase(abc.ABC):
         for callback in self._on_rotate_callbacks:
             callback()
 
-    def _make_bucket(self, now: float) -> _Bucket:
+    def _make_bucket(self, now: float) -> _Bucket[T]:
         """Wraps a new subclass implementation into a _Bucket container."""
         return _Bucket(impl=self._make_bucket_impl(), created_at=now)
 
     @abc.abstractmethod
     def _make_bucket_impl(self) -> typing.Any:
         """Returns the raw internal structure for a new bucket."""
+        ...
+
+    @classmethod
+    @abc.abstractmethod
+    def _get_bucket_impl_item_count(cls, impl: T) -> int:
+        """Returns the item count of the underlying bucket implementation.
+
+        Note:
+            The count may be exact or approximate, depending on the bucket implementation.
+        """
         ...
 
     def __contains__(self, item: typing.Any) -> bool:
@@ -171,7 +192,7 @@ class _RotatingTTLBase(abc.ABC):
         return False
 
 
-class _RotatingTTLCollectionBase(_RotatingTTLBase):
+class _RotatingTTLCollectionBase(_RotatingTTLBase[T], typing.Generic[T]):
     """Intermediate base class for structures supporting fast-reject history filters.
 
     Provides joint logic for structures that store exact items (like sets and dicts)
@@ -224,20 +245,6 @@ class _RotatingTTLCollectionBase(_RotatingTTLBase):
     @property
     def history_rejection_filter_fpr(self):
         return self._history_rejection_filter_fpr
-
-    def get_active_bucket_len(self):
-        """Calculates the number of items in the active bucket.
-
-        If the active bucket has expired based on the total TTL, returns 0 to reflect
-        its effective state.
-
-        Returns:
-            The number of items currently in the active bucket.
-        """
-        if time.monotonic() - self._buckets[0].created_at >= self._ttl:
-            return 0
-
-        return len(self._buckets[0].impl)
 
     def _rotate(
         self,

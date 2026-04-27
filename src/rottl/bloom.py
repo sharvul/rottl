@@ -2,12 +2,11 @@ import rbloom
 import time
 import typing
 
-from ._base import _Bucket
 from ._base import _RotationReason
 from ._base import _RotatingTTLBase
 
 
-class RotatingTTLBloom(_RotatingTTLBase):
+class RotatingTTLBloom(_RotatingTTLBase[rbloom.Bloom]):
     """A rotating Bloom filter with approximate time-based eviction.
 
     Manages a deque of buckets to provide approximate time-based eviction.
@@ -21,8 +20,6 @@ class RotatingTTLBloom(_RotatingTTLBase):
         "_bucket_fpr",
         "_inserts_until_saturation_check",
     )
-
-    _buckets: typing.Deque[_Bucket[rbloom.Bloom]]
 
     def __init__(
         self,
@@ -83,24 +80,6 @@ class RotatingTTLBloom(_RotatingTTLBase):
         self._buckets[0].impl.add(item)
         self._inserts_until_saturation_check -= 1
 
-    def get_active_bucket_approx_items(self):
-        """Calculates the approximate number of items in the active bucket.
-
-        If the active bucket has expired based on the total TTL, returns 0 to reflect
-        its effective state.
-
-        Note:
-            Calculating this value requires counting all set bits in the underlying
-            Bloom filter, which is an O(M) operation (where M is the filter size in bits).
-
-        Returns:
-            The approximate number of items currently in the active bucket.
-        """
-        if time.monotonic() - self._buckets[0].created_at >= self._ttl:
-            return 0
-
-        return self._buckets[0].impl.approx_items
-
     def _rotate(
         self,
         now: float,
@@ -116,6 +95,16 @@ class RotatingTTLBloom(_RotatingTTLBase):
             expected_items=self._bucket_capacity,
             false_positive_rate=self._bucket_fpr,
         )
+
+    @classmethod
+    def _get_bucket_impl_item_count(cls, bucket_impl: rbloom.Bloom):
+        """Returns the approximate item count of the bloom bucket impl.
+
+        Note:
+            Calculating this value requires counting all set bits in the underlying
+            Bloom filter, which is an O(M) operation (where M is the filter size in bits).
+        """
+        return bucket_impl.approx_items
 
     def __repr__(self) -> str:
         return (

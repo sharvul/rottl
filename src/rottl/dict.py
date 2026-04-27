@@ -1,12 +1,11 @@
 import time
 import typing
 
-from ._base import _Bucket
 from ._base import _RotationReason
 from ._base import _RotatingTTLCollectionBase
 
 
-class RotatingTTLDict(_RotatingTTLCollectionBase):
+class RotatingTTLDict(_RotatingTTLCollectionBase[dict]):
     """A rotating dict with approximate time-based eviction.
 
     Manages a deque of buckets to provide approximate time-based eviction.
@@ -17,8 +16,6 @@ class RotatingTTLDict(_RotatingTTLCollectionBase):
     """
 
     __slots__ = ()
-
-    _buckets: typing.Deque[_Bucket[dict]]
 
     def get(self, key: typing.Any, default: typing.Any = None) -> typing.Any:
         """Returns the value for key if key is in the dictionary, else default."""
@@ -65,6 +62,11 @@ class RotatingTTLDict(_RotatingTTLCollectionBase):
     def _make_bucket_impl(self) -> dict:
         """Returns a native Python dict for the new bucket."""
         return dict()
+
+    @classmethod
+    def _get_bucket_impl_item_count(cls, impl: dict):
+        """Returns the exact item count of the dict bucket impl."""
+        return len(impl)
 
     def __repr__(self) -> str:
         return (

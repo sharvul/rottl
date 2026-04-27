@@ -1,12 +1,11 @@
 import time
 import typing
 
-from ._base import _Bucket
 from ._base import _RotationReason
 from ._base import _RotatingTTLCollectionBase
 
 
-class RotatingTTLSet(_RotatingTTLCollectionBase):
+class RotatingTTLSet(_RotatingTTLCollectionBase[set]):
     """A rotating set with approximate time-based eviction.
 
     Manages a deque of buckets to provide approximate time-based eviction.
@@ -17,8 +16,6 @@ class RotatingTTLSet(_RotatingTTLCollectionBase):
     """
 
     __slots__ = ()
-
-    _buckets: typing.Deque[_Bucket[set]]
 
     def add(self, item: typing.Any) -> None:
         """Adds an item to the active bucket, rotating by time or capacity if necessary.
@@ -41,6 +38,11 @@ class RotatingTTLSet(_RotatingTTLCollectionBase):
     def _make_bucket_impl(self) -> set:
         """Returns a native Python set for the new bucket."""
         return set()
+
+    @classmethod
+    def _get_bucket_impl_item_count(cls, impl: set):
+        """Returns the exact item count of the set bucket impl."""
+        return len(impl)
 
     def __repr__(self) -> str:
         return (
