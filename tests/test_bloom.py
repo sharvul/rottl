@@ -51,10 +51,7 @@ class TestRotatingTTLBloom:
         assert 2000 in r_bloom
         assert 2500 in r_bloom
 
-    @mock.patch("time.monotonic")
-    def test_get_active_bucket_item_count(self, mock_monotonic):
-        mock_monotonic.return_value = 0.0
-
+    def test_get_active_bucket_item_count(self):
         r_bloom = rottl.RotatingTTLBloom(
             ttl=60.0,
             num_buckets=4,
@@ -68,10 +65,6 @@ class TestRotatingTTLBloom:
             r_bloom.add(i)
 
         assert r_bloom.get_active_bucket_item_count() > 100
-
-        # validate we don't count expired buckets
-        mock_monotonic.return_value = 120.0
-        assert r_bloom.get_active_bucket_item_count() == 0
 
     def test_clear_removes_all_elements(self):
         r_bloom = rottl.RotatingTTLBloom(

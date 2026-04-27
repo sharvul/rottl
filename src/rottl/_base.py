@@ -126,14 +126,13 @@ class _RotatingTTLBase(abc.ABC, typing.Generic[T]):
         self._on_rotate_callbacks.clear()
 
     def get_active_bucket_item_count(self) -> int:
-        """Calculates the number of items (or approximate items) in the active bucket.
+        """Returns the exact or approximate number of items in the active bucket.
 
-        If the active bucket has expired based on the total TTL, returns 0 to reflect
-        its effective state.
+        Note:
+            The returned count reflects the current state without triggering a rotation.
+            The active bucket may already be past its rotation threshold (by time or
+            capacity), in which case it will be replaced on the next insert.
         """
-        if time.monotonic() - self._buckets[0].created_at >= self._ttl:
-            return 0
-
         return self._get_bucket_impl_item_count(self._buckets[0].impl)
 
     def _rotate(

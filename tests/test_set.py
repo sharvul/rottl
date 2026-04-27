@@ -56,12 +56,7 @@ class TestRotatingTTLSet:
         assert 1 in r_set
         assert 2 in r_set
 
-    @mock.patch("time.monotonic")
-    def test_get_active_bucket_item_count(
-        self, mock_monotonic, enable_history_fast_reject
-    ):
-        mock_monotonic.return_value = 0.0
-
+    def test_get_active_bucket_item_count(self, enable_history_fast_reject):
         r_set = rottl.RotatingTTLSet(
             ttl=60.0,
             num_buckets=2,
@@ -77,10 +72,6 @@ class TestRotatingTTLSet:
 
         r_set.add(True)
         assert r_set.get_active_bucket_item_count() == 1
-
-        # validate we don't count expired buckets
-        mock_monotonic.return_value = 120.0
-        assert r_set.get_active_bucket_item_count() == 0
 
     def test_on_rotate_callbacks(self, enable_history_fast_reject):
         r_set = rottl.RotatingTTLSet(
