@@ -55,13 +55,24 @@ All three structures rotate automatically based on time and capacity, though cap
 * **`RotatingTTLSet` and `RotatingTTLDict`**: Capacity is checked inline on every insertion via an $O(1)$ `len()` call.
 * **`RotatingTTLBloom`**: Estimating the number of unique inserted items requires inspecting filter occupancy by counting set bits — an $O(M)$ operation. To keep the hot path $O(1)$ for the vast majority of insertions, capacity is managed via an **amortized countdown** that defers the check.
 
-`RotatingTTLSet` and `RotatingTTLDict` support an optional **history fast-reject** mode, which maintains an auxiliary Bloom filter over all non-expired historical buckets. This allows most negative lookups to be rejected without scanning the full bucket deque, at the cost of filter rebuild on each rotation.
-
 ## When to use RoTTL
 
-- **Approximate TTL is acceptable.** Expiry happens at bucket boundaries, not per item. Under normal load (no capacity-based eviction), items live between `ttl - (ttl / num_buckets)` and `ttl` seconds. Capacity pressure can cause earlier eviction.
+- **Approximate TTL is acceptable.** Expiry happens at bucket boundaries, not per item. Under normal load (no capacity-based eviction), items live between `ttl - (ttl / num_buckets)` and `ttl` seconds. Capacity pressure can cause earlier eviction. Setting `bucket_ttl_jitter_ratio` further reduces the minimum, but helps avoid synchronized eviction spikes across instances.
 - **Memory-constrained environments.** RoTTL's bucket-level eviction avoids per-item bookkeeping, keeping structure overhead proportional to bucket count rather than item count.
   - `RotatingTTLDict` uses roughly 3–4× less memory than `cachetools.TTLCache`.
 - **Write-heavy workloads.** RoTTL's write path is lightweight — no per-item expiry metadata is maintained on insertion.
   - `RotatingTTLDict` is 6–15× faster than `cachetools.TTLCache` on insertions (varies by fast-reject usage and rotation pressure).
 - **Lookup performance scales with configuration.** Lookups scan up to `num_buckets` buckets, so with a small bucket count the overhead is negligible. With a large bucket count, hit cost depends on which bucket the item is found in, and miss cost grows linearly. `RotatingTTLSet` and `RotatingTTLDict`'s history fast-reject option makes most miss latency independent of `num_buckets`, at the cost of slower rotations.
+
+## Advanced Usage
+
+Because eviction happens at the bucket level, a rotation event drops all items in that bucket at
+once. In deployments with multiple instances — such as Kubernetes pods — all instances initialized
+around the same time will rotate in lockstep, causing simultaneous cache drops across the fleet.
+`bucket_ttl_jitter_ratio` addresses this by randomly shortening each bucket's TTL by up to
+`ratio * bucket_ttl` seconds on rotation, spreading eviction events out over time.
+
+`RotatingTTLSet` and `RotatingTTLDict` support an optional **history fast-reject** mode, which
+maintains an auxiliary Bloom filter over all non-expired historical buckets. This allows most
+negative lookups to be rejected without scanning the full bucket deque, at the cost of filter
+rebuild on each rotation.
