@@ -50,7 +50,7 @@ class RotatingTTLDict(_RotatingTTLCollectionBase[dict]):
         now = time.monotonic()
 
         # 1. Time-based rotation check
-        if now - self._buckets[0].created_at >= self._bucket_ttl:
+        if now - self._buckets[0].created_at >= self._current_bucket_ttl:
             self._rotate(now, _RotationReason.TTL)
 
         # 2. Capacity-based rotation check

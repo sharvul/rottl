@@ -3,6 +3,7 @@ import collections
 import enum
 import time
 import typing
+import random
 import rbloom
 
 T = typing.TypeVar("T")
@@ -36,8 +37,10 @@ class _RotatingTTLBase(abc.ABC, typing.Generic[T]):
 
     Manages a deque of buckets to provide approximate time-based eviction.
     Items are retained for a maximum of `ttl` seconds. Under normal volume,
-    items live for at least `ttl - (ttl / num_buckets)` seconds, but may be
-    evicted earlier if high insertion volume forces capacity-based rotations.
+    items live for at least `ttl - (ttl / num_buckets)` seconds, though this
+    minimum may be reduced if `bucket_ttl_jitter_ratio` is set. Items may also
+    be evicted earlier if high insertion volume forces automatic capacity-based
+    rotations.
     """
 
     __slots__ = (
@@ -45,6 +48,8 @@ class _RotatingTTLBase(abc.ABC, typing.Generic[T]):
         "_num_buckets",
         "_bucket_capacity",
         "_bucket_ttl",
+        "_bucket_ttl_jitter_ratio",
+        "_current_bucket_ttl",
         "_buckets",
         "_on_rotate_callbacks",
         "_rotations_by_ttl_count",
@@ -56,6 +61,7 @@ class _RotatingTTLBase(abc.ABC, typing.Generic[T]):
         ttl: float,
         num_buckets: int,
         bucket_capacity: int,
+        bucket_ttl_jitter_ratio: float = 0.0,
     ):
         """Initializes the rotating TTL structure.
 
@@ -71,11 +77,17 @@ class _RotatingTTLBase(abc.ABC, typing.Generic[T]):
             raise ValueError("ttl must be strictly positive.")
         if bucket_capacity < 1:
             raise ValueError("bucket_capacity must be at least 1.")
+        if not 0.0 <= bucket_ttl_jitter_ratio < 1.0:
+            raise ValueError(
+                "bucket_ttl_jitter_ratio must be between 0.0 (inclusive) and 1.0 (exclusive)."
+            )
 
         self._ttl = ttl
         self._num_buckets = num_buckets
         self._bucket_capacity = bucket_capacity
         self._bucket_ttl = ttl / num_buckets
+        self._bucket_ttl_jitter_ratio = bucket_ttl_jitter_ratio
+        self._current_bucket_ttl = self._bucket_ttl
 
         self._buckets: typing.Deque[_Bucket[T]] = collections.deque(maxlen=num_buckets)
         self._on_rotate_callbacks: typing.List[typing.Callable[[], None]] = []
@@ -148,6 +160,12 @@ class _RotatingTTLBase(abc.ABC, typing.Generic[T]):
         elif reason is _RotationReason.CAPACITY:
             self._rotations_by_capacity_count += 1
 
+        self._current_bucket_ttl = self._bucket_ttl
+        if self._bucket_ttl_jitter_ratio > 0.0:
+            self._current_bucket_ttl -= random.uniform(
+                0.0, self._bucket_ttl * self._bucket_ttl_jitter_ratio
+            )
+
         for callback in self._on_rotate_callbacks:
             callback()
 
@@ -210,6 +228,7 @@ class _RotatingTTLCollectionBase(_RotatingTTLBase[T], typing.Generic[T]):
         ttl: float,
         num_buckets: int,
         bucket_capacity: int,
+        bucket_ttl_jitter_ratio: float = 0.0,
         enable_history_fast_reject: bool = False,
         history_rejection_filter_fpr: float = 0.001,
     ):
@@ -219,6 +238,8 @@ class _RotatingTTLCollectionBase(_RotatingTTLBase[T], typing.Generic[T]):
             ttl: Total time-to-live for data in seconds.
             num_buckets: The number of rotation stages used to divide the total TTL.
             bucket_capacity: Max items per bucket before auto-rotation.
+            bucket_ttl_jitter_ratio: Max fraction (0.0 to 1.0) to randomly reduce
+                bucket TTL, helping desynchronize rotations across instances.
             enable_history_fast_reject: If True, maintains an aggregate Bloom filter
                 of all items in non-active buckets. This allows __contains__ to reject
                 misses faster (when num_buckets isn't very small), at the cost of
@@ -235,7 +256,7 @@ class _RotatingTTLCollectionBase(_RotatingTTLBase[T], typing.Generic[T]):
         self._history_rejection_filter_fpr = history_rejection_filter_fpr
         self._history_rejection_filter = None
 
-        super().__init__(ttl, num_buckets, bucket_capacity)
+        super().__init__(ttl, num_buckets, bucket_capacity, bucket_ttl_jitter_ratio)
 
     @property
     def enable_history_fast_reject(self):

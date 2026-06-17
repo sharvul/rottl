@@ -134,6 +134,30 @@ class TestRotatingTTLBloom:
         assert r_bloom.rotations_by_ttl == 1
         assert r_bloom.rotations_by_capacity == 1
 
+    @mock.patch("time.monotonic")
+    @mock.patch("random.uniform")
+    def test_bucket_ttl_jitter_reduces_ttl(self, mock_uniform, mock_monotonic):
+        mock_monotonic.return_value = 100.0
+        mock_uniform.return_value = 1.0
+
+        r_bloom = rottl.RotatingTTLBloom(
+            ttl=10.0,
+            num_buckets=2,
+            bucket_capacity=10,
+            bucket_fpr=0.001,
+            bucket_ttl_jitter_ratio=0.2,
+        )
+
+        # At 3.9 seconds later, the 4.0s jittered threshold hasn't been hit yet
+        mock_monotonic.return_value = 103.9
+        r_bloom.add(1)
+        assert r_bloom.rotations_by_ttl == 0
+
+        # At exactly 4.0 seconds later, rotation triggers early (normally takes 5.0s)
+        mock_monotonic.return_value = 104.0
+        r_bloom.add(2)
+        assert r_bloom.rotations_by_ttl == 1
+
     def test_repr(self):
         r_bloom = rottl.RotatingTTLBloom(
             ttl=60.0,

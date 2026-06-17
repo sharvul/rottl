@@ -11,8 +11,9 @@ class RotatingTTLBloom(_RotatingTTLBase[rbloom.Bloom]):
 
     Manages a deque of buckets to provide approximate time-based eviction.
     Items are retained for a maximum of `ttl` seconds. Under normal volume,
-    items live for at least `ttl - (ttl / num_buckets)` seconds, but may be
-    evicted earlier if high insertion volume forces automatic capacity-based
+    items live for at least `ttl - (ttl / num_buckets)` seconds, though this
+    minimum may be reduced if `bucket_ttl_jitter_ratio` is set. Items may also
+    be evicted earlier if high insertion volume forces automatic capacity-based
     rotations.
     """
 
@@ -27,6 +28,7 @@ class RotatingTTLBloom(_RotatingTTLBase[rbloom.Bloom]):
         num_buckets: int,
         bucket_capacity: int,
         bucket_fpr: float,
+        bucket_ttl_jitter_ratio: float = 0.0,
     ):
         """Initializes the rotating TTL Bloom filter.
 
@@ -36,6 +38,8 @@ class RotatingTTLBloom(_RotatingTTLBase[rbloom.Bloom]):
             bucket_capacity: Max unique items per bucket to maintain the target false
                 positive rate.
             bucket_fpr: Target false positive rate per bucket.
+            bucket_ttl_jitter_ratio: Max fraction (0.0 to 1.0) to randomly reduce
+                bucket TTL, helping desynchronize rotations across instances.
         """
         if not 0.0 < bucket_fpr < 1.0:
             raise ValueError("bucket_fpr must be between 0 and 1.")
@@ -43,7 +47,7 @@ class RotatingTTLBloom(_RotatingTTLBase[rbloom.Bloom]):
         self._bucket_fpr = bucket_fpr
         self._inserts_until_saturation_check = bucket_capacity
 
-        super().__init__(ttl, num_buckets, bucket_capacity)
+        super().__init__(ttl, num_buckets, bucket_capacity, bucket_ttl_jitter_ratio)
 
     @property
     def bucket_fpr(self):
@@ -58,7 +62,7 @@ class RotatingTTLBloom(_RotatingTTLBase[rbloom.Bloom]):
         now = time.monotonic()
 
         # 1. Time-based rotation check
-        if now - self._buckets[0].created_at >= self._bucket_ttl:
+        if now - self._buckets[0].created_at >= self._current_bucket_ttl:
             self._rotate(now, _RotationReason.TTL)
 
         # 2. Capacity-based rotation check (amortized)
